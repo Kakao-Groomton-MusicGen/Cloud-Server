@@ -1,0 +1,58 @@
+ pipeline {
+    agent { label 'agent' }
+
+    environment {
+        REPO = 'Kakao-Groomton-MusicGen/Front-End'
+        IMAGE_NAME = 'mute-frontend'
+        ECR_ACCESS_CREDENTIAL = 'ecr-access'
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                script {
+                    git url: "https://github.com/${env.REPO}.git", branch: 'develop'
+                }
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    dockerImage = docker.build("${IMAGE_NAME}:v0.0.${env.BUILD_NUMBER}")
+                }
+            }
+        }
+    
+        stage('Push to ECR') {
+            steps {
+                script {
+                    docker.withRegistry("https://211125697339.dkr.ecr.ap-northeast-2.amazonaws.com", "ecr:ap-northeast-2:${env.ECR_ACCESS_CREDENTIAL}") {
+                        docker.image("${env.IMAGE_NAME}:v0.0.${env.BUILD_NUMBER}").push()
+                    }
+                }
+            }
+        }
+        
+        stage('Remove Docker Image') {
+            steps {
+                script {
+                    sh "docker rmi ${env.IMAGE_NAME}:v0.0.${env.BUILD_NUMBER} || true"
+                    sh "docker rmi 211125697339.dkr.ecr.ap-northeast-2.amazonaws.com/${env.IMAGE_NAME}:v0.0.${env.BUILD_NUMBER} || true"
+                }
+            }
+        }
+        
+        stage('Trigger CD Job') {
+            steps {
+                script {
+                    echo "IMAGE_TAG = v0.0.${env.BUILD_NUMBER}"
+                    build job: 'CD_frontend', parameters: [string(name: 'IMAGE_TAG', value: "v0.0.${env.BUILD_NUMBER}")], 
+                        wait: false
+                }
+            }
+        }    
+        
+    }
+
+}

@@ -1,0 +1,45 @@
+pipeline {
+    agent { label 'agent' }
+    
+    parameters {
+        string(name: 'IMAGE_TAG', defaultValue: 'v0')
+    }
+    
+    environment {
+        // 환경 변수 설정
+        ECR_REPO = '211125697339.dkr.ecr.ap-northeast-2.amazonaws.com/mute-frontend' 
+        SSH_CREDENTIALS_ID = 'ec2_ssh_key'
+    }
+
+    stages {
+        stage('Deploy to EC2') {
+            steps {
+                withCredentials([string(credentialsId: 'ec2_ssh_frontend', variable: 'EC2_INSTANCE_IP')]) {
+                    script {
+                        // SSH를 통해 EC2에 연결하고, ECR 이미지를 가져와 실행
+                        sshagent([SSH_CREDENTIALS_ID]) {
+                            sh """
+                            ssh -o StrictHostKeyChecking=no ec2-user@${EC2_INSTANCE_IP} '
+                            aws ecr get-login-password --region ap-northeast-2 | docker login --username AWS --password-stdin ${ECR_REPO}
+                            docker pull ${ECR_REPO}:v0.0.1
+                            docker stop front-server || true
+                            docker rm front-server || true
+                            docker run -d --name front-server -p 3000:3000 ${ECR_REPO}:${IMAGE_TAG}
+                            docker system prune -f 
+                            docker image prune -f
+                            '
+                            """
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            echo 'Deployment process completed.'
+            // 배포 후 정리 작업이나 상태 확인 등의 추가적인 작업을 수행할 수 있습니다.
+        }
+    }
+}
